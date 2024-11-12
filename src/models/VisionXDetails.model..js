@@ -1,11 +1,9 @@
 const mongoose = require("mongoose");
+const moment = require("moment-timezone"); // Import moment-timezone
 
-// Helper function to format Date object to railway time (HH:mm:ss)
-function formatRailwayTime(date) {
-  const hours = date.getHours().toString().padStart(2, "0");
-  const minutes = date.getMinutes().toString().padStart(2, "0");
-  const seconds = date.getSeconds().toString().padStart(2, "0");
-  return `${hours}:${minutes}:${seconds}`;
+// Function to format the time in a specific timezone (12-hour format with date)
+function format12HourTimeWithDateAndTimezone(date, timezone = "Asia/Kolkata") {
+  return moment(date).tz(timezone).format("dddd, MMMM D, YYYY hh:mm:ss A");
 }
 
 // Camera details schema
@@ -42,9 +40,6 @@ const cameraDetails = new mongoose.Schema({
     {
       updatedTimes: {
         type: String,
-        default: function () {
-          return formatRailwayTime(new Date()); // Store the current time in railway format
-        },
       },
     },
   ],
@@ -83,5 +78,6 @@ const cameraSchema = new mongoose.Schema({
   cameraStatuses: [cameraDetails],
 });
 
+// Create and export the camera model
 const CameraModel = mongoose.model("Camera_Status", cameraSchema);
 module.exports = CameraModel;

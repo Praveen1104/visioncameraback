@@ -2,7 +2,7 @@ const { logger } = require("../../logger/logger");
 const { CODES } = require("../../common/respose-code");
 const { sendResponse } = require("../../common/common");
 const PersonalInfo = require("../../models/PersonalInfo.model");
-
+const moment = require("moment-timezone");
 const validCoverageStatuses = ["Screen is interrupted", "None", "Error"];
 const checkCameraStatus = (cameraStatuses) => {
   console.log(cameraStatuses);
@@ -100,6 +100,50 @@ const getbykitIds = (VisionX) => async (req) => {
     return sendResponse(CODES.INTERNAL_SERVER_ERROR, error.message);
   }
 };
+function format12HourTimeWithDateAndTimezone(date, timezone = "Asia/Kolkata") {
+  return moment(date).tz(timezone).format("dddd, MMMM D, YYYY hh:mm:ss A");
+}
+const updateCameraStatus = async (VisionX, visionXId, ip, updates) => {
+  // Build the update query for camera status updates (excluding history)
+  const updateFields = {};
+  for (let key in updates) {
+    console.log(key, updates[key]);
+    updateFields[`cameraStatuses.$.${key}`] = updates[key];
+  }
+
+  // Perform the update on the camera status
+  const updatedDocument = await VisionX.findOneAndUpdate(
+    { visionXId, "cameraStatuses.ip": ip },
+    { $set: updateFields },
+    { new: true } // Return the updated document
+  );
+  return updatedDocument;
+};
+
+const updateCameraHistory = async (VisionX, visionXId, ip) => {
+  // Get formatted time in 12-hour format with timezone
+  const formattedTime = format12HourTimeWithDateAndTimezone(new Date());
+
+  // Push the new timestamp to the camera's history
+  const updateHistory = {
+    $push: {
+      "cameraStatuses.$.history": {
+        updatedTimes: formattedTime,
+        timestamp: new Date(), // Store the actual Date object for record keeping
+      },
+    },
+  };
+
+  // Perform the history update on the camera status
+  const updatedDocument = await VisionX.findOneAndUpdate(
+    { visionXId, "cameraStatuses.ip": ip },
+    updateHistory,
+    { new: true } // Return the updated document
+  );
+
+  return updatedDocument;
+};
+
 const updateKit = (VisionX) => async (req) => {
   try {
     const { visionXId, cameraStatuses } = req.body;
@@ -112,26 +156,22 @@ const updateKit = (VisionX) => async (req) => {
       );
     }
 
-    // Build the update queries for each camera status to be updated
+    // Update promises for each camera status and history
     const updatePromises = cameraStatuses.map(async (statusUpdate) => {
       const { ip, ...updates } = statusUpdate;
-      const updateFields = {};
 
-      // Update the camera status fields
-      for (let key in updates) {
-        updateFields[`cameraStatuses.$.${key}`] = updates[key];
-      }
-
-      // Add new update time to the history array
-      updateFields["cameraStatuses.$.history"] = {
-        updatedTimes: new Date(), // Add timestamp to the history array
-      };
-
-      await VisionX.findOneAndUpdate(
-        { visionXId, "cameraStatuses.ip": ip },
-        { $push: { "cameraStatuses.$.history": { updatedTimes: new Date() } } }, // Pushing the new update time
-        { new: true } // Return the updated document
+      // First, update the camera status (excluding history)
+      const updatedStatus = await updateCameraStatus(
+        VisionX,
+        visionXId,
+        ip,
+        updates
       );
+
+      // Then, update the camera history (add the timestamp)
+      await updateCameraHistory(VisionX, visionXId, ip);
+
+      return updatedStatus; // Return updated status after both operations
     });
 
     // Wait for all updates to finish
@@ -156,8 +196,11 @@ const updateKit = (VisionX) => async (req) => {
     personalInfo.status = overallStatus;
     updatedVisionX.status = overallStatus;
 
+    // Save the updated personal info and VisionX status
     await personalInfo.save();
     await updatedVisionX.save();
+
+    // Return the updated VisionX document
     return sendResponse(
       CODES.OK,
       "Camera status updated successfully",
@@ -169,6 +212,83 @@ const updateKit = (VisionX) => async (req) => {
   }
 };
 
+// const updateKit = (VisionX) => async (req) => {
+//   try {
+//     const { visionXId, cameraStatuses } = req.body;
+//     logger.info(`Updating status for VisionX ID: ${visionXId}`);
+
+//     if (!visionXId || !cameraStatuses || !Array.isArray(cameraStatuses)) {
+//       return sendResponse(
+//         CODES.BAD_REQUEST,
+//         "visionXId and cameraStatuses are required"
+//       );
+//     }
+
+//     // Build the update queries for each camera status to be updated
+//     const updatePromises = cameraStatuses.map(async (statusUpdate) => {
+//       const { ip, ...updates } = statusUpdate;
+//       const updateFields = {};
+
+//       for (let key in updates) {
+//         console.log(key, updates[key]);
+//         updateFields[`cameraStatuses.$.${key}`] = updates[key];
+//       }
+
+//       // Get the formatted timestamp using moment
+//       const formattedTime = format12HourTimeWithDateAndTimezone(new Date()); // Get formatted time in 12-hour format
+
+//       // Add the formatted timestamp to the camera's history
+//       updateFields["cameraStatuses.$.history"] = {
+//         updatedTimes: formattedTime,
+//       };
+
+//       // Perform the update and push the history to the camera's status
+//       await VisionX.findOneAndUpdate(
+//         { visionXId, "cameraStatuses.ip": ip },
+//         {
+//           $push: {
+//             "cameraStatuses.$.history": { updatedTimes: formattedTime },
+//           },
+//         },
+//         { new: true } // Return the updated document
+//       );
+//     });
+
+//     // Wait for all updates to finish
+//     await Promise.all(updatePromises);
+
+//     // Fetch the updated VisionX document once after all updates
+//     const updatedVisionX = await VisionX.findOne({ visionXId });
+//     if (!updatedVisionX) {
+//       return sendResponse(CODES.NOT_FOUND, "VisionX document not found");
+//     }
+
+//     // Fetch personal information
+//     const customerId = updatedVisionX.customerId;
+//     const personalInfo = await PersonalInfo.findOne({ customerId });
+//     if (!personalInfo) {
+//       return sendResponse(CODES.NOT_FOUND, "Personal information not found");
+//     }
+
+//     // Optionally, determine the overall status based on the updates
+//     const overallStatus = checkCameraStatus(updatedVisionX.cameraStatuses);
+//     console.log(overallStatus);
+//     personalInfo.status = overallStatus;
+//     updatedVisionX.status = overallStatus;
+
+//     await personalInfo.save();
+//     await updatedVisionX.save();
+
+//     return sendResponse(
+//       CODES.OK,
+//       "Camera status updated successfully",
+//       updatedVisionX // Return the updated document just once
+//     );
+//   } catch (error) {
+//     logger.error(error);
+//     throw new Error("Error in updating camera status");
+//   }
+// };
 const deleteByKitId = (VisionX) => async (req) => {
   try {
     console.log("hi");
