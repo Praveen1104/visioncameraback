@@ -116,14 +116,20 @@ const updateKit = (VisionX) => async (req) => {
     const updatePromises = cameraStatuses.map(async (statusUpdate) => {
       const { ip, ...updates } = statusUpdate;
       const updateFields = {};
+
+      // Update the camera status fields
       for (let key in updates) {
-        console.log(key, updates[key]);
         updateFields[`cameraStatuses.$.${key}`] = updates[key];
       }
 
+      // Add new update time to the history array
+      updateFields["cameraStatuses.$.history"] = {
+        updatedTimes: new Date(), // Add timestamp to the history array
+      };
+
       await VisionX.findOneAndUpdate(
         { visionXId, "cameraStatuses.ip": ip },
-        { $set: updateFields },
+        { $push: { "cameraStatuses.$.history": { updatedTimes: new Date() } } }, // Pushing the new update time
         { new: true } // Return the updated document
       );
     });
@@ -162,6 +168,7 @@ const updateKit = (VisionX) => async (req) => {
     throw new Error("Error in updating camera status");
   }
 };
+
 const deleteByKitId = (VisionX) => async (req) => {
   try {
     console.log("hi");

@@ -1,5 +1,14 @@
 const mongoose = require("mongoose");
 
+// Helper function to format Date object to railway time (HH:mm:ss)
+function formatRailwayTime(date) {
+  const hours = date.getHours().toString().padStart(2, "0");
+  const minutes = date.getMinutes().toString().padStart(2, "0");
+  const seconds = date.getSeconds().toString().padStart(2, "0");
+  return `${hours}:${minutes}:${seconds}`;
+}
+
+// Camera details schema
 const cameraDetails = new mongoose.Schema({
   cameraNumber: {
     type: Number,
@@ -25,12 +34,23 @@ const cameraDetails = new mongoose.Schema({
     type: String,
     required: false,
   },
-  crearedAt: {
+  createdAt: {
     type: Date,
     default: Date.now,
   },
+  history: [
+    {
+      updatedTimes: {
+        type: String,
+        default: function () {
+          return formatRailwayTime(new Date()); // Store the current time in railway format
+        },
+      },
+    },
+  ],
 });
 
+// Main camera schema
 const cameraSchema = new mongoose.Schema({
   customerId: {
     type: String,
