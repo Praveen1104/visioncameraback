@@ -1,11 +1,6 @@
 const mongoose = require("mongoose");
 const moment = require("moment-timezone"); // Import moment-timezone
 
-// Function to format the time in a specific timezone (12-hour format with date)
-function format12HourTimeWithDateAndTimezone(date, timezone = "Asia/Kolkata") {
-  return moment(date).tz(timezone).format("dddd, MMMM D, YYYY hh:mm:ss A");
-}
-
 // Camera details schema
 const cameraDetails = new mongoose.Schema({
   cameraNumber: {
@@ -15,6 +10,10 @@ const cameraDetails = new mongoose.Schema({
   ip: {
     type: String,
     required: true,
+  },
+  camera_ip: {
+    type: String,
+    required: false,
   },
   cameraPosition: {
     type: String,
@@ -46,37 +45,54 @@ const cameraDetails = new mongoose.Schema({
 });
 
 // Main camera schema
-const cameraSchema = new mongoose.Schema({
-  customerId: {
-    type: String,
-    required: true,
+const cameraSchema = new mongoose.Schema(
+  {
+    customerId: {
+      type: String,
+      required: true,
+    },
+    visionXId: {
+      type: String,
+      required: true,
+    },
+    latitude: {
+      type: String,
+      required: true,
+    },
+    longitude: {
+      type: String,
+      required: true,
+    },
+    location: {
+      type: String,
+      required: true,
+    },
+    numberOfCameras: {
+      type: Number,
+      required: true,
+    },
+    status: {
+      type: Boolean,
+      required: false,
+    },
+    kitStatus: {
+      type: String,
+      enum: ["working", "not working"],
+      default: "working", // Default to 'working' initially
+    },
+    kithistory: [
+      {
+        kitUpdatedTimes: {
+          type: String,
+        },
+      },
+    ],
+    cameraStatuses: [cameraDetails],
   },
-  visionXId: {
-    type: String,
-    required: true,
-  },
-  latitude: {
-    type: String,
-    required: true,
-  },
-  longitude: {
-    type: String,
-    required: true,
-  },
-  location: {
-    type: String,
-    required: true,
-  },
-  numberOfCameras: {
-    type: Number,
-    required: true,
-  },
-  status: {
-    type: Boolean,
-    required: false,
-  },
-  cameraStatuses: [cameraDetails],
-});
+  {
+    timestamps: { createdAt: "createdAt", updatedAt: "updatedAt" },
+  }
+);
 
 // Create and export the camera model
 const CameraModel = mongoose.model("Camera_Status", cameraSchema);

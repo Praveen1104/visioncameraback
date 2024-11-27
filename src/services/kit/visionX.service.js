@@ -30,10 +30,12 @@ const newKitRegister = (VisionX) => async (req) => {
       numberOfCameras: req.body.numberOfCameras,
       cameraStatuses: req.body.cameraStatuses.map((camera) => ({
         ip: camera.ip,
+        camera_ip: camera.camera_ip,
         cameraPosition: camera.cameraPosition,
         image: camera.image, // Image path will be passed from the controller
         createdat: camera.createdat,
-        status: camera.status,
+        status: "Online",
+        Coverage: "Screen not interrupted",
       })),
     }).save();
 
@@ -117,6 +119,7 @@ const updateCameraStatus = async (VisionX, visionXId, ip, updates) => {
     { $set: updateFields },
     { new: true } // Return the updated document
   );
+  console.log(updatedDocument);
   return updatedDocument;
 };
 
@@ -148,7 +151,7 @@ const updateKit = (VisionX) => async (req) => {
   try {
     const { visionXId, cameraStatuses } = req.body;
     logger.info(`Updating status for VisionX ID: ${visionXId}`);
-
+    console.log(cameraStatuses);
     if (!visionXId || !cameraStatuses || !Array.isArray(cameraStatuses)) {
       return sendResponse(
         CODES.BAD_REQUEST,
@@ -159,7 +162,7 @@ const updateKit = (VisionX) => async (req) => {
     // Update promises for each camera status and history
     const updatePromises = cameraStatuses.map(async (statusUpdate) => {
       const { ip, ...updates } = statusUpdate;
-
+      console.log("camerassssssssssssssssssssssss", updates);
       // First, update the camera status (excluding history)
       const updatedStatus = await updateCameraStatus(
         VisionX,
@@ -189,17 +192,35 @@ const updateKit = (VisionX) => async (req) => {
     if (!personalInfo) {
       return sendResponse(CODES.NOT_FOUND, "Personal information not found");
     }
+    const kitInfo = await VisionX.find({ customerId });
+    if (!kitInfo) {
+      return sendResponse(CODES.NOT_FOUND, "Personal information not found");
+    }
 
     // Optionally, determine the overall status based on the updates
     const overallStatus = checkCameraStatus(updatedVisionX.cameraStatuses);
-    console.log(overallStatus);
-    personalInfo.status = overallStatus;
+    // personalInfo.status = overallStatus;
     updatedVisionX.status = overallStatus;
 
     // Save the updated personal info and VisionX status
-    await personalInfo.save();
+    // await personalInfo.save();
     await updatedVisionX.save();
+    const allKitsWorking = kitInfo.every((kit) => kit.status == true);
+    if (allKitsWorking) {
+      // 3. If all kits are working, update the PersonalInfo status to true
+      const personalInfostatus = await PersonalInfo.findOneAndUpdate(
+        { customerId }, // Find the personal info by customerId
+        { status: true }, // Set the status to true
+        { new: true } // Return the updated document
+      );
 
+      if (!personalInfostatus) {
+        // If no personal info found, send NOT_FOUND response
+        return sendResponse(CODES.NOT_FOUND, "Personal information not found");
+      }
+
+      // If personal info was updated successfully
+    }
     // Return the updated VisionX document
     return sendResponse(
       CODES.OK,
@@ -339,7 +360,7 @@ const updateByKitId = (VisionX) => async (req) => {
 const addCamera = (VisionX) => async (req) => {
   try {
     const { visionXId } = req.body; // You might want to extract this from the body
-    const { ip, cameraPosition } = req.body; // Only the fields you mentioned
+    const { ip, cameraPosition, camera_ip } = req.body; // Only the fields you mentioned
     console.log(visionXId);
     logger.info("Adding camera status for VisionX ID", visionXId);
 
@@ -355,7 +376,10 @@ const addCamera = (VisionX) => async (req) => {
     const cameraData = {
       ip,
       cameraPosition,
-      image: req.file.path, // Store the image path from multer
+      image: req.file.path,
+      camera_ip,
+      status: "Online",
+      Coverage: "Screen not interrupted", // Store the image path from multer
     };
     const updatedCamera = await VisionX.findOneAndUpdate(
       { visionXId },
@@ -378,6 +402,78 @@ const addCamera = (VisionX) => async (req) => {
   }
 };
 
+const debounceTimers = {}; // In-memory object to store debounce timers
+
+const DEBOUNCE_TIMEOUT = 10 * 60 * 1000; // 1 minute in milliseconds (60,000ms)
+
+const checkAndUpdateKitStatus = (VisionX) => async (req, res) => {
+  try {
+    const { visionXId } = req.body; // Extract the visionXId from the request body
+    console.log("Checking camera status for VisionX ID", visionXId);
+
+    // Validate required fields
+    if (!visionXId) {
+      return sendResponse(CODES.INTERNAL_SERVER_ERROR, "visionXId is required");
+    }
+
+    // Get the camera system by VisionX ID
+    const cameraSystem = await VisionX.findOne({ visionXId });
+
+    if (!cameraSystem) {
+      return sendResponse(
+        CODES.INTERNAL_SERVER_ERROR,
+        "Camera system not found"
+      );
+    }
+
+    // Create a new timestamp entry for kithistory
+    const createdTimestamp = moment()
+      .tz("Asia/Kolkata")
+      .format("dddd, MMMM D, YYYY hh:mm:ss A");
+    console.log("Created timestamp:", createdTimestamp);
+
+    // Ensure kithistory is initialized as an array if it's undefined
+    if (!cameraSystem.kithistory) {
+      cameraSystem.kithistory = [];
+    }
+
+    // Push the new timestamp into the kithistory array
+    cameraSystem.kithistory.push({ kitUpdatedTimes: createdTimestamp });
+
+    // Reset kitStatus to "working" since this API call is a valid update
+    cameraSystem.kitStatus = "working";
+
+    // Save the updated camera system with the new kithistory entry and kitStatus
+    await cameraSystem.save(); // Save to persist the new kithistory entry
+
+    // console.log("Updated kithistory:", cameraSystem.kithistory);
+    console.log("Updated kitStatus:", cameraSystem.kitStatus);
+
+    // Update debounce timer for the given visionXId (if not set, initialize it)
+    clearTimeout(debounceTimers[visionXId]);
+
+    // Set a new timer for this camera system to update kitStatus to "not working" after the debounce timeout
+    debounceTimers[visionXId] = setTimeout(async () => {
+      // If no more requests come in for this visionXId, set kitStatus to "not working"
+      const cameraSystemToUpdate = await VisionX.findOne({ visionXId });
+
+      if (cameraSystemToUpdate) {
+        cameraSystemToUpdate.kitStatus = "not working"; // Set to "not working" after debounce timeout
+        await cameraSystemToUpdate.save();
+        console.log(
+          `Kit status for VisionX ID ${visionXId} set to "not working" due to inactivity.`
+        );
+      }
+    }, DEBOUNCE_TIMEOUT); // 1 minute debounce timeout
+
+    // Return success response
+    return sendResponse(CODES.OK, "kit Status  updated successfully");
+  } catch (error) {
+    console.error("Error updating kit Status :", error);
+    return sendResponse(CODES.INTERNAL_SERVER_ERROR, error.message);
+  }
+};
+
 module.exports = {
   newKitRegister,
   getKit,
@@ -387,4 +483,5 @@ module.exports = {
   deleteByKitId,
   updateByKitId,
   addCamera,
+  checkAndUpdateKitStatus,
 };

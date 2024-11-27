@@ -9,7 +9,9 @@ const {
   deleteByKitId,
   updateByKitId,
   addCamera,
+  checkAndUpdateKitStatus,
 } = require("../services/kit/visionX.service");
+const { Console } = require("winston/lib/winston/transports");
 
 const newKit = async (req, res) => {
   console.log(req.body);
@@ -87,6 +89,15 @@ const AddCamera = async (req, res) => {
   logger.info("add camera api Excuted ");
   res.status(responseMessage.status).send(responseMessage); // Send the response from the service
 };
+const UpdateKitStatus = async (req, res) => {
+  console.log(req.body);
+  const updatekitStatus = await checkAndUpdateKitStatus(VisionXDetails);
+
+  const responseMessage = await updatekitStatus(req);
+  console.log(responseMessage);
+  logger.info("updatekitbyvisionxId api Excuted");
+  res.status(responseMessage.status).send(responseMessage);
+};
 module.exports = {
   newKit,
   getKitbyID,
@@ -96,4 +107,5 @@ module.exports = {
   deletbykitID,
   kitUpdateById,
   AddCamera,
+  UpdateKitStatus,
 };

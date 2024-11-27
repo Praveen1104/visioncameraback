@@ -1,13 +1,18 @@
 const express = require("express");
 const http = require("http");
+require("dotenv").config();
 const WebSocket = require("ws");
 const cors = require("cors"); // Import CORS
 const connectDB = require("./src/config/db"); // Adjust the path as necessary
 const { logger } = require("./src/logger/logger"); // Adjust the path as necessary
 const { router } = require("./src/routes/routes");
+const { initializeApp, applicationDefault } = require("firebase-admin/app");
+const { getMessaging } = require("firebase-admin/messaging");
+const express = require("express");
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+process.env.GOOGLE_APPLICATION_CREDENTIALS;
 // Middleware
 app.use(cors()); // Enable CORS
 app.use(express.json()); // Parse JSON request bodies
@@ -35,7 +40,32 @@ app.get("/api", (req, res) => {
 app.use("/", router);
 // Connect to MongoDB and start watching for changes
 connectDB(wss);
+app.post("/send", function (req, res) {
+  const receivedToken = req.body.fcmToken;
 
+  const message = {
+    notification: {
+      title: "Notif",
+      body: "This is a Test Notification",
+    },
+    token: "YOUR FCM TOKEN HERE",
+  };
+
+  getMessaging()
+    .send(message)
+    .then((response) => {
+      res.status(200).json({
+        message: "Successfully sent message",
+        token: receivedToken,
+      });
+      console.log("Successfully sent message:", response);
+    })
+    .catch((error) => {
+      res.status(400);
+      res.send(error);
+      console.log("Error sending message:", error);
+    });
+});
 // Start the server
 server.listen(PORT, () => {
   logger.info(`Server is running on port ${PORT}`);
