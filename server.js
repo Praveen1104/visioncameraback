@@ -8,7 +8,6 @@ const { logger } = require("./src/logger/logger"); // Adjust the path as necessa
 const { router } = require("./src/routes/routes");
 const { initializeApp, applicationDefault } = require("firebase-admin/app");
 const { getMessaging } = require("firebase-admin/messaging");
-const express = require("express");
 const app = express();
 const PORT = process.env.PORT || 3000;
 
@@ -17,7 +16,10 @@ process.env.GOOGLE_APPLICATION_CREDENTIALS;
 app.use(cors()); // Enable CORS
 app.use(express.json()); // Parse JSON request bodies
 app.use("/uploads", express.static("/src/public"));
-
+initializeApp({
+  credential: applicationDefault(),
+  projectId: "potion-for-creators",
+});
 // Create an HTTP server
 const server = http.createServer(app);
 
