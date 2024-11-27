@@ -44,7 +44,7 @@ app.use("/", router);
 connectDB(wss);
 app.post("/send", function (req, res) {
   const receivedToken = req.body.fcmToken;
-
+  console.lof(receivedToken);
   const message = {
     notification: {
       title: "Notif",
