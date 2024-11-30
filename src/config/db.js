@@ -12,6 +12,7 @@ const connectDB = async (wss) => {
     await mongoose.connect(mongoURI, {
       autoCreate: true,
       autoIndex: false,
+      serverSelectionTimeoutMS: 30000,
     });
     logger.info("MongoDB connected successfully");
 

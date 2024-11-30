@@ -1,7 +1,5 @@
 const mongoose = require("mongoose");
-const moment = require("moment-timezone"); // Import moment-timezone
 
-// Camera details schema
 const cameraDetails = new mongoose.Schema({
   cameraNumber: {
     type: Number,
@@ -19,14 +17,6 @@ const cameraDetails = new mongoose.Schema({
     type: String,
     required: true,
   },
-  image: {
-    type: String,
-    required: false,
-  },
-  status: {
-    type: String,
-    required: false,
-  },
   Coverage: {
     type: String,
     required: false,
@@ -35,10 +25,21 @@ const cameraDetails = new mongoose.Schema({
     type: Date,
     default: Date.now,
   },
+  status: {
+    type: String,
+    required: false,
+  },
+  history: [
+    {
+      updatedTimes: {
+        type: String,
+      },
+    },
+  ],
 });
 
 // Main camera schema
-const cameraSchema = new mongoose.Schema(
+const historymodel = new mongoose.Schema(
   {
     customerId: {
       type: String,
@@ -47,6 +48,11 @@ const cameraSchema = new mongoose.Schema(
     visionXId: {
       type: String,
       required: true,
+    },
+    kitStatus: {
+      type: String,
+      enum: ["working", "not working"],
+      default: "working", // Default to 'working' initially
     },
     latitude: {
       type: String,
@@ -68,7 +74,13 @@ const cameraSchema = new mongoose.Schema(
       type: Boolean,
       required: false,
     },
-
+    kithistory: [
+      {
+        kitUpdatedTimes: {
+          type: String,
+        },
+      },
+    ],
     cameraStatuses: [cameraDetails],
   },
   {
@@ -77,5 +89,5 @@ const cameraSchema = new mongoose.Schema(
 );
 
 // Create and export the camera model
-const CameraModel = mongoose.model("Camera_Status", cameraSchema);
-module.exports = CameraModel;
+const historyModel = mongoose.model("history_Status", historymodel);
+module.exports = historyModel;

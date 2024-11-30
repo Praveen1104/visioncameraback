@@ -3,6 +3,7 @@ const { CODES } = require("../../common/respose-code");
 const { sendResponse } = require("../../common/common");
 const PersonalInfo = require("../../models/PersonalInfo.model");
 const moment = require("moment-timezone");
+const historyModel = require("../../models/history.model");
 const validCoverageStatuses = ["Screen is interrupted", "None", "Error"];
 const checkCameraStatus = (cameraStatuses) => {
   console.log(cameraStatuses);
@@ -38,7 +39,21 @@ const newKitRegister = (VisionX) => async (req) => {
         Coverage: "Screen not interrupted",
       })),
     }).save();
-
+    const hisorykit = await new historyModel({
+      customerId: req.body.customerId,
+      visionXId: req.body.visionXId,
+      location: req.body.location,
+      status: true,
+      numberOfCameras: req.body.numberOfCameras,
+      cameraStatuses: req.body.cameraStatuses.map((camera) => ({
+        ip: camera.ip,
+        camera_ip: camera.camera_ip,
+        cameraPosition: camera.cameraPosition,
+        createdat: camera.createdat,
+        status: "Online",
+        Coverage: "Screen not interrupted",
+      })),
+    }).save();
     return sendResponse(CODES.OK, "Kit registered successfully", kit);
   } catch (error) {
     logger.error(error);
@@ -170,9 +185,14 @@ const updateKit = (VisionX) => async (req) => {
         ip,
         updates
       );
-
+      const historyStatus = await updateCameraStatus(
+        historyModel,
+        visionXId,
+        ip,
+        updates
+      );
       // Then, update the camera history (add the timestamp)
-      await updateCameraHistory(VisionX, visionXId, ip);
+      await updateCameraHistory(historyModel, visionXId, ip);
 
       return updatedStatus; // Return updated status after both operations
     });
@@ -232,6 +252,109 @@ const updateKit = (VisionX) => async (req) => {
     throw new Error("Error in updating camera status");
   }
 };
+
+// const updateCameraStatus = async (VisionX, visionXId, ip, updates) => {
+//   const updateFields = {};
+//   for (let key in updates) {
+//     updateFields[`cameraStatuses.$.${key}`] = updates[key];
+//   }
+
+//   const updatedDocument = await VisionX.findOneAndUpdate(
+//     { visionXId, "cameraStatuses.ip": ip },
+//     { $set: updateFields },
+//     { new: true }
+//   );
+
+//   return updatedDocument;
+// };
+
+// const updateCameraHistory = async (VisionX, visionXId, ip) => {
+//   const formattedTime = format12HourTimeWithDateAndTimezone(new Date());
+//   const updateHistory = {
+//     $push: {
+//       "cameraStatuses.$.history": {
+//         updatedTimes: formattedTime,
+//         timestamp: new Date(),
+//       },
+//     },
+//   };
+
+//   const updatedDocument = await VisionX.findOneAndUpdate(
+//     { visionXId, "cameraStatuses.ip": ip },
+//     updateHistory,
+//     { new: true }
+//   );
+
+//   return updatedDocument;
+// };
+
+// const fetchCustomerData = async (customerId) => {
+//   const personalInfo = await PersonalInfo.findOne({ customerId });
+//   if (!personalInfo) {
+//     throw new Error("Personal information not found");
+//   }
+
+//   const kitInfo = await VisionX.find({ customerId });
+//   if (!kitInfo.length) {
+//     throw new Error("No VisionX kits found for the customer");
+//   }
+
+//   return { personalInfo, kitInfo };
+// };
+
+// const updateKit = (VisionX) => async (req) => {
+//   try {
+//     const { visionXId, cameraStatuses } = req.body;
+//     logger.info(`Updating status for VisionX ID: ${visionXId}`);
+
+//     if (!visionXId || !cameraStatuses || !Array.isArray(cameraStatuses)) {
+//       return sendResponse(
+//         CODES.BAD_REQUEST,
+//         "visionXId and cameraStatuses are required"
+//       );
+//     }
+
+//     const updatePromises = cameraStatuses.map(async (statusUpdate) => {
+//       const { ip, ...updates } = statusUpdate;
+
+//       // Update status and history
+//       await updateCameraStatus(VisionX, visionXId, ip, updates);
+//       await updateCameraHistory(VisionX, visionXId, ip);
+//     });
+
+//     await Promise.all(updatePromises);
+
+//     const updatedVisionX = await VisionX.findOne({ visionXId });
+//     if (!updatedVisionX) {
+//       return sendResponse(CODES.NOT_FOUND, "VisionX document not found");
+//     }
+
+//     const { customerId } = updatedVisionX;
+//     const { personalInfo, kitInfo } = await fetchCustomerData(customerId);
+
+//     // Determine overall status
+//     const overallStatus = checkCameraStatus(updatedVisionX.cameraStatuses);
+//     updatedVisionX.status = overallStatus;
+
+//     // Check if all kits are working
+//     const allKitsWorking = kitInfo.every((kit) => kit.status === true);
+//     if (allKitsWorking) {
+//       personalInfo.status = true;
+//       await personalInfo.save();
+//     }
+
+//     await updatedVisionX.save();
+
+//     return sendResponse(
+//       CODES.OK,
+//       "Camera status updated successfully",
+//       updatedVisionX
+//     );
+//   } catch (error) {
+//     logger.error("Error in updating camera status:", error);
+//     return sendResponse(CODES.INTERNAL_SERVER_ERROR, error.message);
+//   }
+// };
 
 // const updateKit = (VisionX) => async (req) => {
 //   try {
@@ -417,7 +540,7 @@ const checkAndUpdateKitStatus = (VisionX) => async (req, res) => {
     }
 
     // Get the camera system by VisionX ID
-    const cameraSystem = await VisionX.findOne({ visionXId });
+    const cameraSystem = await historyModel.findOne({ visionXId });
 
     if (!cameraSystem) {
       return sendResponse(
@@ -474,6 +597,37 @@ const checkAndUpdateKitStatus = (VisionX) => async (req, res) => {
   }
 };
 
+const eraseOldHistory = async (VisionX) => {
+  try {
+    const tenDaysAgo = new Date();
+    tenDaysAgo.setDate(tenDaysAgo.getDate() - 10);
+
+    // Find all documents with existing camera history
+    const kits = await VisionX.find({
+      "cameraStatuses.history.updatedTimes": { $exists: true },
+    });
+
+    for (const kit of kits) {
+      // Update only the history field of each camera
+      kit.cameraStatuses.forEach((camera) => {
+        if (camera?.history) {
+          camera.history = camera.history.filter((entry) => {
+            const entryDate = new Date(entry.updatedTimes);
+            return entryDate >= tenDaysAgo;
+          });
+        }
+      });
+
+      // Save the updated kit
+      await kit.save();
+    }
+
+    console.log("Successfully erased history older than 10 days.");
+  } catch (error) {
+    console.error("Error erasing old history:", error);
+  }
+};
+
 module.exports = {
   newKitRegister,
   getKit,
@@ -484,4 +638,5 @@ module.exports = {
   updateByKitId,
   addCamera,
   checkAndUpdateKitStatus,
+  eraseOldHistory,
 };
